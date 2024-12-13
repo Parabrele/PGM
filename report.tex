@@ -219,7 +219,7 @@ Let $\mathbf{X}$ be the $n \times d$ data matrix, and $\mathbf{M_p}$ be a $n \ti
     \text{MSE} = \frac{1}{n \cdot d} \sum_{i=1}^n \sum_{j=1}^d \left(\mathbf{X}_{ij} - \mathbf{X}_{\text{reconstructed},ij}\right)^2
 \end{equation}
 
-with $\mathbf{X}_{\text{reconstructed}}$ being either $\mathbf{X}_{\text{baseline}}$ or $\mathbf{X}_{\text{PPCA}}$.
+with $\mathbf{X}_{\text{reconstructed}}$ being either $\mathbf{X}_{\text{baseline}}$ or $\mathbf{X}_{\text{PPCA}}$. We repeat this experiment for different proportions of missing data $p$ and use a mixture of 10 PPCA models on the MNIST dataset. We report the results in \cref{fig:mse_vs_p}. \cref{fig:mnist_reconstruction} shows an illustrative example of missing value reconstruction using PPCA.
 
 \begin{figure}[h]
     \centering
@@ -258,37 +258,141 @@ with $\mathbf{X}_{\text{reconstructed}}$ being either $\mathbf{X}_{\text{baselin
     \label{fig:mnist_likelihood}
 \end{figure}
 
-\paragraph{} One of the advantages of PPCA is its ability to model uncertainty, which can be used for outlier detection. Given a new data point $\mathbf{x}$, we can compute its likelihood under the PPCA model. If the likelihood is very low, the data point can be considered an outlier.
+\paragraph{} One of the advantages of PPCA is its ability to model uncertainty, which can be used for outlier detection. Given a new data point $\mathbf{x}$, we can compute its likelihood under the PPCA model using \cref{eq:ppca_log_likelihood} - and the corresponding formula in the mixture setting. If the likelihood is very low, the data point can be considered an outlier.
 
-To compute the likelihood of a new data point $\mathbf{x}$, we use the marginal distribution of the data given by \cref{eq:ppca_marginal}. The log-likelihood of $\mathbf{x}$ is given by:
-
-\begin{equation}
-    \label{eq:ppca_log_likelihood}
-    \log p(\mathbf{x}) = -\frac{d}{2} \log(2\pi) - \frac{1}{2} \log |\mathbf{C}| - \frac{1}{2} (\mathbf{x} - \boldsymbol{\mu})^T \mathbf{C}^{-1} (\mathbf{x} - \boldsymbol{\mu})
-\end{equation}
-
-where $\mathbf{C} = \mathbf{WW}^T + \sigma^2\mathbf{I}$ is the covariance matrix of the marginal distribution. We can then set a threshold on the log-likelihood to detect outliers. Data points with log-likelihood below this threshold are considered outliers.
-
-In our experiments, we evaluate the outlier detection performance of PPCA on a synthetic dataset. We generate a dataset with two clusters, one of which contains outliers. We then fit a PPCA model to the data and compute the log-likelihood of each data point. We compare the outlier detection performance of PPCA to that of standard PCA and a Gaussian Mixture Model (GMM).
+In our experiments, we evaluate the outlier detection performance of PPCA on a synthetic dataset. We generate a dataset with one cluster along with some outliers. We then fit a PPCA model to the data and compute the log-likelihood of each data point. We report the results in \cref{fig:outlier_detection}. \cref{fig:mnist_likelihood} shows the likelihood of MNIST images under a mixture of 10 PPCA models as well as the likelihood of a damaged image.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\textwidth]{outlier_detection.png}
+    \includegraphics[width=0.2\textwidth]{outlier_detection.png}
     \caption{Outlier detection using PPCA. The red points are the detected outliers.}
     \label{fig:outlier_detection}
 \end{figure}
-
-\paragraph{} As shown in \cref{fig:outlier_detection}, PPCA is able to detect outliers effectively by modeling the uncertainty in the data. This demonstrates the advantage of using a probabilistic model for tasks such as outlier detection.
 
 \subsection{Data visualization}
 
 % Show how PPCA and MPPCA can be used for data visualization, and how it shows that the method captures meaningful structure in the data. Extend to sample generation.
 
+% Means of MPPCAs should correspond to recognizable classes, PCs should correspond to meaningful variations in the data features, and mean + PC should be recognizable samples.
+
+% By sampling from the model, we should be able to plot likely images.
+
+\paragraph{} Data visualization is another important application of PPCA and MPPCA. By projecting high-dimensional data onto a lower-dimensional space, we can gain insights into the structure and relationships within the data, and the visualization of the mean and principal components of the model can also provide useful insights. In this section, we demonstrate how PPCA can be used for data visualization.
+
+\paragraph{} We use the MNIST dataset for this experiment. The MNIST dataset consists of images of handwritten digits, each of size 28x28 pixels. We first fit a PPCA model with 2 principal components to the dataset and project the data onto the 2-dimensional space spanned by these components. The resulting scatter plot is shown in \cref{fig:ppca_mnist}, where points correspond to images and are colored by their digit label.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.2\textwidth]{ppca_mnist.png}
+    \caption{2D visualization of the MNIST dataset using PPCA. Each point represents an image, colored by its digit label.}
+    \label{fig:ppca_mnist}
+\end{figure}
+
+\paragraph{} We then fit a mixture of 10 PPCA models (MPPCA) to the dataset, with each component having 10 principal components. We visualise the mean of each component in \cref{fig:mppca_mnist_mean} and the first principal components in \cref{fig:mppca_mnist_pc}. TODO : analyse the results. 
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.1\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{mppca_mean.png}
+        \caption{Mean of each component $\boldsymbol{\mu}_m$}
+        \label{fig:mppca_mnist_mean}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.1\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{mppca_pc1.png}
+        \caption{First principal component $\mathbf{W}_m^1$}
+        \label{fig:mppca_mnist_pc1}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.1\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{mppca_mean_plus_pc1.png}
+        \caption{$\boldsymbol{\mu}_m + \mathbf{W}_m^1$}
+        \label{fig:mppca_mnist_mean_plus_pc1}
+    \end{subfigure}
+    \caption{Visualization of the mean, first principal component, and mean + first principal component for each component in the MPPCA model.}
+    \label{fig:mppca_mnist}
+\end{figure}
+
+\paragraph{} Additionally, we can use the PPCA models to generate new samples, since in this models, latents are supposed to follow standard normal distributions. By sampling from the latent space and transforming the samples back to the original space, we can generate new images that resemble the original data. \cref{fig:ppca_samples} show examples of images generated using PPCA and MPPCA, respectively.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.2\textwidth]{ppca_samples.png}
+    \caption{Images sampled from the PPCA models.}
+    \label{fig:ppca_samples}
+\end{figure}
+
+\paragraph{} These generated samples further illustrate the capability of PPCA to model the underlying structure of the data.
+
+\paragraph{} In summary, PPCA and MPPCA are powerful tools for data visualization and sample generation. They provide insights into the structure of high-dimensional data and enable the generation of new samples that resemble the original data.
+
 \subsection{Data compression}
+
+% Using PPCA models, we can store data in a lower-dimensional space. Original data size : 28x28xnx8 bits, compressed data size : qmxnx8 bits for a mixture of m PPCA models.
+
+% Plot the reconstruction error as a function of the compression rate for PCA, PPCA and MPPCA.
+
+\paragraph{} Data compression is a key application of dimensionality reduction methods. We evaluate the performance of PPCA and MPPCA on the task of data compression and compare it to standard PCA. We measure the reconstruction error as a function of the compression rate and report the results in \cref{fig:compression}. We use the MNIST dataset for this experiment.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.2\textwidth]{compression.png}
+    \caption{Reconstruction error as a function of the compression rate for PCA, PPCA and MPPCA.}
+    \label{fig:compression}
+\end{figure}
 
 \subsection{Denoising}
 
-% compare PCA, PPCA, MPPCA, EM
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.2\textwidth]{denoising_illustration.png}
+    \caption{Illustrative example of image denoising using PPCA.}
+    \label{fig:denoising_illustration}
+\end{figure}
+
+\paragraph{} In this experiment, we evaluate the performance of PPCA on the tasks of data denoising. We compare the performance of these methods to standard PCA and other baseline methods. We proceed as follows:
+
+\begin{itemize}
+    \item Generate a noisy version of the MNIST dataset by adding isotropic Gaussian noise to the images.
+    \item Fit a PPCA model to the noisy data and reconstruct the images. We use a mixture of 10 PPCA models with a high number of components of $q = \frac{d}{2}$.
+    \item Measure the reconstruction error and compare it to the baseline methods.
+\end{itemize}
+
+We report reconstruction error as a function of the strenght of the noise $\sigma_noise$ in \cref{fig:denoising}. \cref{fig:denoising_illustration} shows an illustrative example of image denoising using PPCA.
+
+The intuition behind why PPCA is better than PCA on this task is that the denoising capabilities of PCA arise from the fact that low variance directions can be considered as containing noise while all the interesting signal is stored in high variance directions. However, if the noise is full rank, the first principal components will also contain noise. PPCA can separate the noise from the signal by modeling the noise explicitly in the model.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.2\textwidth]{denoising.png}
+    \caption{Reconstruction error as a function of the noise strength for PCA, PPCA and a mixture of 10 PPCA on the MNIST dataset.}
+    \label{fig:denoising}
+\end{figure}
+
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{} This report has presented a comprehensive overview of Probabilistic Principal Component Analysis (PPCA) and its extension to Mixtures of Probabilistic Principal Component Analyzers (MPPCA). We have presented both the theoretical framework and practical applications of these methods, particularly in handling noisy or missing data, outlier detection and data visualization.
+
+\paragraph{Strengths of PPCA and MPPCA} One of the principal strengths of PPCA is that it extends the utility of standard PCA to applications requiring a probabilistic framework. This probabilistic basis enables PPCA to:
+\begin{itemize}
+    \item Handle noisy or missing data seamlessly through the explicit modeling of noise and the Expectation-Maximization (EM) algorithm,
+    \item Quantify uncertainty in data, which is beneficial for outlier detection and robustness analysis,
+    \item Provide a solid foundation for further extensions, such as MPPCA, which can model complex, multimodal data distributions,
+    \item Generate new samples from the model.
+\end{itemize}
+
+\paragraph{} The flexibility of MPPCA, akin to Gaussian Mixture Models, allows clustering of data while simultaneously reducing dimensionality. This capability is particularly valuable for tasks involving high-dimensional and heterogeneous datasets, as demonstrated in our experiments on MNIST.
+
+\paragraph{Challenges and Limitations} Despite its advantages, PPCA and its mixture-based extension are not without limitations. Key challenges include:
+\begin{itemize}
+    \item \textbf{Computational Complexity:} The iterative nature of the EM algorithm can be computationally expensive, particularly for large datasets or high-dimensional data.
+    \item \textbf{Model Assumptions:} The assumption of Gaussianity in PPCA may limit its applicability to non-Gaussian data. Extending the model to accommodate non-Gaussian latent variables could improve its versatility.
+    \item \textbf{Parameter Sensitivity:} The choice of the number of principal components to consider $q$ and the number of mixture components $m$ significantly affects performance, necessitating careful model selection and validation.
+\end{itemize}
 
 \addcontentsline{toc}{section}{References}
 \bibliography{references}
