@@ -44,7 +44,7 @@
 
 This probabilistic approach facilitates tasks such as sample generation, missing data imputation or more robust denoising. Furthermore, it can model uncertainty in a principled manner, enabling for example outlier detection. Building upon this probabilistic framework, Mixtures of Probabilistic Principal Component Analyzers (MPPCA) \citep{MPPCA} combines the strengths of PPCA with clustering capabilities akin to Gaussian Mixture Models (GMM), enabling the modeling of complex, multimodal data distributions. The original formulation of PCA can not be extended to such mixture models.
 
-In this report, we delve into the theoretical foundations and practical applications of PPCA and MPPCA. We present a revised approach to the EM algorithm introduced by \citet{PPCA} to explicitly handle missing data. We quantify their performance on various tasks such as missing data reconstruction, compression and denoising, comparing them to standard PCA and other baseline methods. Using both real-world datasets, like MNIST and CIFAR-10, we also show how PPCA and MPPCA can be used for data visualization.
+In this report, we delve into the theoretical foundations and practical applications of PPCA and MPPCA. We present a revised approach to the EM algorithm introduced by \citet{PPCA} to explicitly handle missing data. We quantify their performance on various tasks such as missing data reconstruction, compression and denoising, comparing them to standard PCA and other baseline methods. Using the real-world dataset MNIST, we also show how PPCA and MPPCA can be used for data visualization.
 
 \section{Principal Component Analysis}
 \label{sec:pca}
@@ -106,44 +106,46 @@ where $\mathbf{M} = \mathbf{W}^T\mathbf{W} + \sigma^2\mathbf{I}$, and take the m
 where $\mathbf{U}_q$ is the matrix of the $q$ eigenvectors of $\Sigma$, corresponding to the $q$ largest eigenvalues in the diagonal matrix $\mathbf{\Lambda}_q$, and $\mathbf{R}$ is an arbitrary orthogonal matrix - most often ignored and set to $\mathbf{I}$. The $\lambda_i$ are the eigenvalues of $\Sigma$, sorted in decreasing order.
 
 \subsection{Expectation-Maximization algorithm}
+\label{sec:ppca_em}
 
 \paragraph{} The ability to account for missing data is one of the main advantages of using a probabilistic model instead of the standard PCA.
 
-The algorithm presented here is our own adaptation of the EM algorithm given by \citet{PPCA} to the case of missing data in $\mathbf{X}$. They give this algorithm in the case where no data is missing, then uses it in an experiment with missing data without details on how to adapt the algorithm.
+The algorithm presented here is our own adaptation of the EM algorithm given by \citet{PPCA} to the case of missing data in $\mathbf{X}$. They give this algorithm in the case where no data is missing, then use it in an experiment with missing data without details on how to adapt the algorithm.
 
-For all $x$ in $\mathbf{X}$, we isolate
+For all $\mathbf{x}$ in $\mathbf{X}$, we isolate
 \begin{itemize}
-    \item the observed entries $x^{(o)}$, of dimension $d^{(o)}$,
-    \item the missing entries $x^{(m)}$,
-    \item the corresponding rows of $\mathbf{W}$, and $\boldsymbol{\mu}$ which we denote $\mathbf{W}^{(o)}$, $\boldsymbol{\mu}^{(o)}$ for the observed entries and $\mathbf{W}^{(m)}$, $\boldsymbol{\mu}^{(m)}$ for the missing entries.
+    \item the observed entries $\mathbf{x}^{(o)}$,
+    \item the missing entries $\mathbf{x}^{(m)}$,
 \end{itemize}
 
-The idea is to estimate the mean and covariance of the latent variable given the observed data, then use these to estimate the missing data. Finally, we use the reconstructed data to update the parameters of the model as if the missing data was observed. Missing data is dealt with as if it was a latent variable.
+The idea is to estimate the latent variable given the observed data and our current best guess for the missing data, then use these to update the estimate of the missing data. Missing data is dealt with as if it was a latent variable.
 
-\paragraph{E-step} Use only the observed data $x^{(o)}$ to estimate the mean and covariance of the latent variable $\mathbf{z|X^{(o)}}$:
+Latent variables for this algorithm are both the actual latent variables $\mathbf{z}$ and the missing data $\mathbf{x}^{(m)}$, model parameters are $\mathbf{W}$, $\boldsymbol{\mu}$ and $\sigma^2$. We start the E-step with some estimate of the latent variables and the model parameters, which we use to update the values of the latent variables. Then in the M-step, we use the updated latent variables to update the model parameters.
+
+\paragraph{E-step} Use the full data $\mathbf{x}$ - made of observed and estimated missing data - to estimate the mean and covariance of the latent variable $\mathbf{z}|\mathbf{x}$:
 
 \begin{align}
     \label{eq:ppca_e_step_E}
-    \E[\mathbf{z|x^{(o)}}] &= \mathbf{M}^{(o)-1}\mathbf{W}^{(o)T}\left(x^{(o)} - \boldsymbol{\mu}^{(o)}\right) \\
+    \E[\mathbf{z}|\mathbf{x}] &= \mathbf{M}^{-1}\mathbf{W}^{T}\left(x - \boldsymbol{\mu}\right) \\
     \label{eq:ppca_e_step_Cov}
-    \mathbf{Cov}[\mathbf{z|x^{(o)}}] &= \sigma^2\mathbf{M}^{(o)-1} + \E[\mathbf{z|x^{(o)}}]\E[\mathbf{z|x^{(o)}}]^T
+    \mathbf{Cov}[\mathbf{z}|\mathbf{x}] &= \sigma^2\mathbf{M}^{-1} + \E[\mathbf{z}|\mathbf{x}]\E[\mathbf{z}|\mathbf{x}]^T
 \end{align}
     
-    where $\mathbf{M}^{(o)} = \mathbf{W}^{(o)T}\mathbf{W}^{(o)} + \sigma^2\mathbf{I}$. The expectation of the latent variable given the observed data can then be used to estimate the missing data:
+    where $\mathbf{M} = \mathbf{W}^{T}\mathbf{W} + \sigma^2\mathbf{I}$. The expectation of the latent variable given the observed data can then be used to estimate the missing data:
 
 \begin{equation}
     \label{eq:ppca_e_step_completion}
-    \E[\mathbf{x^{(m)}|x^{(o)}}] = \mathbf{W}^{(m)}\E[\mathbf{z|x^{(o)}}] + \boldsymbol{\mu}^{(m)}
+    \E[\mathbf{x}^{(m)}|\mathbf{x}^{(o)}] = \mathbf{W}^{(m)}\E[\mathbf{z}|\mathbf{x}] + \boldsymbol{\mu}^{(m)}
 \end{equation}
 
-\paragraph{M-step} Use the full data to update $\mathbf{W}$, $\boldsymbol{\mu}$ and $\sigma^2$:
+\paragraph{M-step} Use these new values to update $\mathbf{W}$, $\boldsymbol{\mu}$ and $\sigma^2$:
 
 \begin{equation}
     \label{eq:ppca_m_step}
     \mathbf{x} = \left[
         \begin{array}{c}
             \mathbf{x}^{(o)} \\
-            \E[\mathbf{x^{(m)}|x^{(o)}}]
+            \E[\mathbf{x}^{(m)}|\mathbf{x}^{(o)}]
         \end{array}       
     \right]
 \end{equation}
@@ -154,23 +156,25 @@ modulo some permutation of the entries of $\mathbf{x}$. We can then use the maxi
     \label{eq:ppca_mu}
     \boldsymbol{\mu} &= \frac{1}{n}\sum_{i=1}^n \mathbf{x}_i \\
     \label{eq:ppca_W}
-    \mathbf{W} &= \left\{
-        \sum_{i=1}^n \left(\mathbf{x}_i - \boldsymbol{\mu}\right) \E[\mathbf{z|x_i^{(o)}}]^T
-    \right\} \left(
-        \sum_{i=1}^n \mathbf{Cov}[\mathbf{z|x_i^{(o)}}]
-    \right) \\
+    \mathbf{W} &= \left[
+        \sum_{i=1}^n \left(\mathbf{x}_i - \boldsymbol{\mu}\right) \E[\mathbf{z}|\mathbf{x}_i]^T
+    \right] \left[
+        \sum_{i=1}^n \mathbf{Cov}[\mathbf{z}|\mathbf{x}_i]
+    \right] \\
     \label{eq:ppca_sigma}
     \sigma^2 &= \frac{1}{nd}\sum_{i=1}^n \left\{
-        \left\| \mathbf{x}_i - \boldsymbol{\mu}\right\|^2 - 2\E[\mathbf{z|x_i^{(o)}}]^T\mathbf{W}^T\left(\mathbf{x}_i - \boldsymbol{\mu}\right) + \text{tr}\left(\mathbf{Cov}[\mathbf{z|x_i^{(o)}}]\mathbf{W}^T\mathbf{W}\right)
+        \left\| \mathbf{x}_i - \boldsymbol{\mu}\right\|^2 - 2\E[\mathbf{z}|\mathbf{x}_i]^T\mathbf{W}^T\left(\mathbf{x}_i - \boldsymbol{\mu}\right) + \text{tr}\left(\mathbf{Cov}[\mathbf{z}|\mathbf{x}_i]\mathbf{W}^T\mathbf{W}\right)
     \right\}
 \end{align}
 
 \subsection{Mixtures of PPCA}
 \label{sec:mppca}
 
-\paragraph{} An advantage of using a probabilistic model is that it can be easily extended to a mixture model, unlike standard PCA. This is done by introducing M PPCA models, each with its own parameters $\mathbf{W}_m$, $\boldsymbol{\mu}_m$ and $\sigma^2_m$, and a mixing coefficient $\pi_m$ for each model. This is very close to a Gaussian Mixture Model.
+\paragraph{} An advantage of using a probabilistic model is that it can be easily extended to a mixture model, unlike standard PCA. This is done by introducing m PPCA models, each with its own parameters $\mathbf{W}_j$, $\boldsymbol{\mu}_j$ and $\sigma^2_j$, and a mixing coefficient $\pi_j$ for each model. This is very close to a Gaussian Mixture Model.
 
-The EM algorithm for this model, described in \citet{MPPCA}, updates $\pi_m$ and $\boldsymbol{\mu}_m$ exactly as in a GMM formulation, and everything else follows naturally as described in that paper. To include missing data, we use the same modifications as in the single PPCA model described above.
+The EM algorithm for this model, described in \citet{MPPCA}, updates $\pi_j$ and $\boldsymbol{\mu}_j$ exactly as in a GMM formulation, and everything else follows naturally as described in that paper. To include missing data, we use the same modifications as in the single PPCA model described above.
+
+A full description of the algorithm is given in \ref{app:mppca_EM}.
 
 \section{Experiments}
 
@@ -212,14 +216,14 @@ a baseline consisting of replacing missing data with their mean value. We procee
 
 % $$$$
 
-Let $\mathbf{X}$ be the $n \times d$ data matrix, and $\mathbf{M_p}$ be a $n \times d$ binary mask matrix indicating missing values. Each entry of $\mathbf{M}$ is set to $0$ with probability $p$. We then compute $\mathbf{X}_{\text{baseline}}$ and $\mathbf{X}_{\text{PPCA}}$ following the baseline and PPCA methods respectively. We evaluate the reconstruction error as the mean squared error between the reconstructed data and the ground truth:
+Let $\mathbf{X}$ be the $n \times d$ data matrix, and $\mathbf{M}_p$ be a $n \times d$ binary mask matrix indicating missing values. Each entry of $\mathbf{M}_p$ is set to $0$ with probability $p$. We then compute $\mathbf{X}_{\text{baseline}}$ and $\mathbf{X}_{\text{PPCA}}$ following the baseline and PPCA methods respectively. We evaluate the reconstruction error as the mean squared error between the reconstructed data and the ground truth:
 
 \begin{equation}
     \label{eq:missing_data_error}
     \text{MSE} = \frac{1}{n \cdot d} \sum_{i=1}^n \sum_{j=1}^d \left(\mathbf{X}_{ij} - \mathbf{X}_{\text{reconstructed},ij}\right)^2
 \end{equation}
 
-with $\mathbf{X}_{\text{reconstructed}}$ being either $\mathbf{X}_{\text{baseline}}$ or $\mathbf{X}_{\text{PPCA}}$. We repeat this experiment for different proportions of missing data $p$ and use a mixture of 10 PPCA models on the MNIST dataset. We report the results in \cref{fig:mse_vs_p}. \cref{fig:mnist_reconstruction} shows an illustrative example of missing value reconstruction using PPCA.
+with $\mathbf{X}_{\text{reconstructed}}$ being either $\mathbf{X}_{\text{baseline}}$ or $\mathbf{X}_{\text{PPCA}}$. We repeat this experiment for different proportions of missing data $p$ and use a mixture of 10 PPCA models on the MNIST dataset. We report the results in \Cref{fig:mse_vs_p}. \Cref{fig:mnist_reconstruction} shows an illustrative example of missing value reconstruction using PPCA.
 
 \begin{figure}[h]
     \centering
@@ -229,8 +233,6 @@ with $\mathbf{X}_{\text{reconstructed}}$ being either $\mathbf{X}_{\text{baselin
 \end{figure}
 
 \subsection{Outliers}
-
-\subsection{Likelihood of MNIST images}
 
 \begin{figure}[H]
     \centering
@@ -258,9 +260,9 @@ with $\mathbf{X}_{\text{reconstructed}}$ being either $\mathbf{X}_{\text{baselin
     \label{fig:mnist_likelihood}
 \end{figure}
 
-\paragraph{} One of the advantages of PPCA is its ability to model uncertainty, which can be used for outlier detection. Given a new data point $\mathbf{x}$, we can compute its likelihood under the PPCA model using \cref{eq:ppca_log_likelihood} - and the corresponding formula in the mixture setting. If the likelihood is very low, the data point can be considered an outlier.
+\paragraph{} One of the advantages of using a probabilistic model is having the ability to model uncertainty, which can be used for outlier detection. Given a new data point $\mathbf{x}$, we can compute its likelihood under the PPCA model using \Cref{eq:mppca_EM_marginal} - and the corresponding formula in the mixture setting. If the likelihood is sufficiently low - e.g. by setting a threshold - the data point can be considered an outlier.
 
-In our experiments, we evaluate the outlier detection performance of PPCA on a synthetic dataset. We generate a dataset with one cluster along with some outliers. We then fit a PPCA model to the data and compute the log-likelihood of each data point. We report the results in \cref{fig:outlier_detection}. \cref{fig:mnist_likelihood} shows the likelihood of MNIST images under a mixture of 10 PPCA models as well as the likelihood of a damaged image.
+In our experiments, we evaluate the outlier detection performance of PPCA on a synthetic dataset. We generate a dataset with one cluster along with some outliers. We then fit a PPCA model to the data and compute the log-likelihood of each data point. We report the results in \Cref{fig:outlier_detection}. \Cref{fig:mnist_likelihood} shows the likelihood of MNIST images under a mixture of 10 PPCA models as well as the likelihood of a damaged image.
 
 \begin{figure}[H]
     \centering
@@ -277,9 +279,9 @@ In our experiments, we evaluate the outlier detection performance of PPCA on a s
 
 % By sampling from the model, we should be able to plot likely images.
 
-\paragraph{} Data visualization is another important application of PPCA and MPPCA. By projecting high-dimensional data onto a lower-dimensional space, we can gain insights into the structure and relationships within the data, and the visualization of the mean and principal components of the model can also provide useful insights. In this section, we demonstrate how PPCA can be used for data visualization.
+\paragraph{} Data visualization is an important application of PCA. By projecting high-dimensional data onto a lower-dimensional space, we can gain insights into the structure and relationships within the data, and the visualization of the mean and principal components of the model can also provide useful insights. In this section, we demonstrate how PPCA can be used for data visualization and how MPPCA is better for visualizing multimodal data.
 
-\paragraph{} We use the MNIST dataset for this experiment. The MNIST dataset consists of images of handwritten digits, each of size 28x28 pixels. We first fit a PPCA model with 2 principal components to the dataset and project the data onto the 2-dimensional space spanned by these components. The resulting scatter plot is shown in \cref{fig:ppca_mnist}, where points correspond to images and are colored by their digit label.
+\paragraph{} We use the MNIST dataset for this experiment. The MNIST dataset consists of images of handwritten digits, each of size 28x28 pixels. We first fit a PPCA model with 2 principal components to the dataset and project the data onto the 2-dimensional space spanned by these components. The resulting scatter plot is shown in \Cref{fig:ppca_mnist}, where points correspond to images and are colored by their digit label.
 
 \begin{figure}[H]
     \centering
@@ -288,7 +290,7 @@ In our experiments, we evaluate the outlier detection performance of PPCA on a s
     \label{fig:ppca_mnist}
 \end{figure}
 
-\paragraph{} We then fit a mixture of 10 PPCA models (MPPCA) to the dataset, with each component having 10 principal components. We visualise the mean of each component in \cref{fig:mppca_mnist_mean} and the first principal components in \cref{fig:mppca_mnist_pc}. TODO : analyse the results. 
+\paragraph{} We then fit a mixture of 10 PPCA models (MPPCA) to the dataset, with each component having 10 principal components. We visualise the mean of each component in \Cref{fig:mppca_mnist_mean} and the first principal components in \Cref{fig:mppca_mnist_pc}. We compare it to the same visualisation using a simple PCA in \Cref{fig:pca_mnist}. TODO : analyse the results. 
 
 \begin{figure}[H]
     \centering
@@ -316,18 +318,44 @@ In our experiments, we evaluate the outlier detection performance of PPCA on a s
     \label{fig:mppca_mnist}
 \end{figure}
 
-\paragraph{} Additionally, we can use the PPCA models to generate new samples, since in this models, latents are supposed to follow standard normal distributions. By sampling from the latent space and transforming the samples back to the original space, we can generate new images that resemble the original data. \cref{fig:ppca_samples} show examples of images generated using PPCA and MPPCA, respectively.
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.1\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{pca_mean.png}
+        \caption{Mean of the data $\boldsymbol{\mu}$}
+        \label{fig:pca_mnist_mean}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.1\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{pca_pc.png}
+        \caption{Principal components $\mathbf{W}^C$}
+        \label{fig:pca_mnist_pc}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.1\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{pca_mean_plus_pc.png}
+        \caption{$\boldsymbol{\mu}_m + \mathbf{W}_m^1$}
+        \label{fig:pca_mnist_mean_plus_pc}
+    \end{subfigure}
+    \caption{Visualization of the mean, principal components, and mean + principal components for a PCA of the MNIST dataset.}
+    \label{fig:mppca_mnist}
+\end{figure}
+
+\paragraph{} Additionally, we can use the PPCA models to generate new samples, since in this models, latents are supposed to follow standard normal distributions. By sampling from the latent space and transforming the samples back to the original space, we can generate new images that resemble the original data. \Cref{fig:ppca_samples} show examples of images generated using the MPPCA from the previous visualization.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.2\textwidth]{ppca_samples.png}
-    \caption{Images sampled from the PPCA models.}
+    \caption{Images sampled from the MPPCA models.}
     \label{fig:ppca_samples}
 \end{figure}
 
 \paragraph{} These generated samples further illustrate the capability of PPCA to model the underlying structure of the data.
 
-\paragraph{} In summary, PPCA and MPPCA are powerful tools for data visualization and sample generation. They provide insights into the structure of high-dimensional data and enable the generation of new samples that resemble the original data.
+\paragraph{} In summary, PPCA and MPPCA are powerful tools for data visualization and sample generation. They provide insights into the structure of high-dimensional data and enable the generation of new samples that follow the original data distribution.
 
 \subsection{Data compression}
 
@@ -335,7 +363,7 @@ In our experiments, we evaluate the outlier detection performance of PPCA on a s
 
 % Plot the reconstruction error as a function of the compression rate for PCA, PPCA and MPPCA.
 
-\paragraph{} Data compression is a key application of dimensionality reduction methods. We evaluate the performance of PPCA and MPPCA on the task of data compression and compare it to standard PCA. We measure the reconstruction error as a function of the compression rate and report the results in \cref{fig:compression}. We use the MNIST dataset for this experiment.
+\paragraph{} Data compression is a key application of dimensionality reduction methods. We evaluate the performance of PPCA and MPPCA on the task of data compression and compare it to standard PCA. We measure the reconstruction error as a function of the compression rate and report the results in \Cref{fig:compression}. We use the MNIST dataset for this experiment.
 
 \begin{figure}[H]
     \centering
@@ -353,15 +381,15 @@ In our experiments, we evaluate the outlier detection performance of PPCA on a s
     \label{fig:denoising_illustration}
 \end{figure}
 
-\paragraph{} In this experiment, we evaluate the performance of PPCA on the tasks of data denoising. We compare the performance of these methods to standard PCA and other baseline methods. We proceed as follows:
+\paragraph{} In this experiment, we evaluate the performance of PPCA on the task of data denoising. We compare the performance of these methods to standard PCA and other baseline methods. We proceed as follows:
 
 \begin{itemize}
     \item Generate a noisy version of the MNIST dataset by adding isotropic Gaussian noise to the images.
-    \item Fit a PPCA model to the noisy data and reconstruct the images. We use a mixture of 10 PPCA models with a high number of components of $q = \frac{d}{2}$.
+    \item Fit a PPCA model to the noisy data and reconstruct the images. We use a mixture of 10 PPCA models with a high number of components $q = \frac{d}{2}$.
     \item Measure the reconstruction error and compare it to the baseline methods.
 \end{itemize}
 
-We report reconstruction error as a function of the strenght of the noise $\sigma_noise$ in \cref{fig:denoising}. \cref{fig:denoising_illustration} shows an illustrative example of image denoising using PPCA.
+We report reconstruction error as a function of the strenght of the noise $\sigma_{noise}$ in \Cref{fig:denoising}. \Cref{fig:denoising_illustration} shows an illustrative example of image denoising using PPCA.
 
 The intuition behind why PPCA is better than PCA on this task is that the denoising capabilities of PCA arise from the fact that low variance directions can be considered as containing noise while all the interesting signal is stored in high variance directions. However, if the noise is full rank, the first principal components will also contain noise. PPCA can separate the noise from the signal by modeling the noise explicitly in the model.
 
@@ -389,7 +417,6 @@ The intuition behind why PPCA is better than PCA on this task is that the denois
 
 \paragraph{Challenges and Limitations} Despite its advantages, PPCA and its mixture-based extension are not without limitations. Key challenges include:
 \begin{itemize}
-    \item \textbf{Computational Complexity:} The iterative nature of the EM algorithm can be computationally expensive, particularly for large datasets or high-dimensional data.
     \item \textbf{Model Assumptions:} The assumption of Gaussianity in PPCA may limit its applicability to non-Gaussian data. Extending the model to accommodate non-Gaussian latent variables could improve its versatility.
     \item \textbf{Parameter Sensitivity:} The choice of the number of principal components to consider $q$ and the number of mixture components $m$ significantly affects performance, necessitating careful model selection and validation.
 \end{itemize}
@@ -401,10 +428,106 @@ The intuition behind why PPCA is better than PCA on this task is that the denois
 \newpage
 \appendix
 
-\section{}
-\label{}
+\section{EM algorithm for MPPCA with missing data}
+\label{app:mppca_EM}
 
-\subsection{}
-\label{}
+\paragraph{} We present here the full EM algorithm for Mixtures of Probabilistic Principal Component Analyzers (MPPCA) with missing data.
+
+Let $\mathbf{X} \in \R^{n \times d}$ be the data matrix, where each $\mathbf{x}_i$ is a data point separated into observed entries $\mathbf{x}_i^{(o)}$ and missing entries $\mathbf{x}_i^{(m)}$. Let m be the number of PPCA models in the mixture, $\mathbf{Z}^j \in \R^{n \times q}$ be the latent variable matrix for the $j$-th model, $\mathbf{W}_j \in \R^{d \times q}$ be the loading matrix, $\boldsymbol{\mu}_j \in \R^d$ be the offset, $\sigma_j^2 \in \R^m$ be the noise variance, and $\pi_j$ be the mixing coefficient for the $j$-th model.
+
+Following the single PPCA model, we write the conditional distribution of the data given the $j$-th model as:
+
+\begin{equation}
+    \label{eq:mppca_EM_conditional}
+    \mathbf{x} | j \sim \mathcal{N}(\mathbf{W}_j\mathbf{z}^j + \boldsymbol{\mu}_j, \sigma_j^2\mathbf{I})
+\end{equation}
+
+\noindent and the overall distribution of the data as:
+
+\begin{equation}
+    \label{eq:mppca_EM_marginal}
+    p(\mathbf{x}_i) = \sum_{j=1}^m \pi_j p(\mathbf{x}_i | j)
+\end{equation}
+
+Let $R_{ij}$ be the posterior responsibility of the $j$-th component for the generation of the $i$-th data point:
+
+\begin{equation}
+    \label{eq:mppca_EM_responsibility}
+    R_{ij} = \frac{p(\mathbf{x}_i | j) \pi_j}{p(\mathbf{x}_i)}
+\end{equation}
+
+Contrary to the single PPCA model, we will use a two stage EM algorithm. If we follow the same procedure as in \cref{sec:ppca_em}, we will get coupled equations for the updates of $\boldsymbol{\mu}_j$ and $\mathbf{W_j}$, which makes the algorithm intractable. Instead, we will use a two stage EM algorithm adapted from \citet{MPPCA}, condensed as follows:
+
+First, update the responsibilities $R_{ij}$ using \Cref{eq:mppca_EM_responsibility}. Then, do the E-step from the single PPCA model to update the estimate of the missing data :
+
+\begin{align}
+    \label{eq:mppca_EM_e_step_E}
+    \E[\mathbf{z}^j|\mathbf{x}] &= \mathbf{M}_j^{-1}\mathbf{W}_j^{T}\left(x - \boldsymbol{\mu}_j\right) \\
+    \label{eq:mppca_EM_e_step_Cov}
+    \mathbf{Cov}[\mathbf{z}^j|\mathbf{x}] &= \sigma_j^2\mathbf{M}_j^{-1} + \E[\mathbf{z}^j|\mathbf{x}]\E[\mathbf{z}^j|\mathbf{x}]^T
+\end{align}
+    
+\noindent where $\mathbf{M}_j = \mathbf{W}_j^{T}\mathbf{W}_j + \sigma_j^2\mathbf{I}$. The expectation of the latent variable given the observed data can then be used to estimate the missing data:
+
+\begin{equation}
+    \label{eq:mppca_EM_e_step_completion}
+    \E[\mathbf{x}_i^{(m)}|\mathbf{x}_i^{(o)}] = \sum_{j=1}^m R_{ij} \left( \mathbf{W}_j^{(m)}\E[\mathbf{z}^j|\mathbf{x}] + \boldsymbol{\mu}_j^{(m)} \right)
+\end{equation}
+
+\noindent With this new values for the data, update $\pi_j$ and $\boldsymbol{\mu}_j$ as follows:
+
+\begin{equation}
+    \label{eq:mppca_EM_pi}
+    \pi_j = \frac{1}{n}\sum_{i=1}^n R_{ij}
+    \label{eq:mppca_EM_mu}
+    \boldsymbol{\mu}_j = \frac{\sum_{i=1}^n R_{ij}\mathbf{x}_i}{\sum_{i=1}^n R_{ij}}
+\end{equation}
+
+\noindent in order to compute the following covariance matrix:
+
+\begin{equation}
+    \label{eq:mppca_EM_cov}
+    \Sigma_j = \frac{1}{\pi_jn}\sum_{i=1}^n R_{ij}\left(\mathbf{x}_i - \boldsymbol{\mu}_j\right)\left(\mathbf{x}_i - \boldsymbol{\mu}_j\right)^T
+\end{equation}
+
+\noindent which can finally be used to update the loading matrix and the noise variance with \Cref{eq:ppca_W_ml,eq:ppca_sigma_ml} respectively.
+
+% Similarly to the single PPCA model, the EM algorithm for MPPCA will work as follows: latent variables are again the actual latent variables $\mathbf{z}$ and the missing data $\mathbf{x}^{(m)}$, while model parameters are all the parameters of the $m$ components. We start the E-step with some estimate of the latent variables and the model parameters, which we use to update the values of the latent variables $\mathbf{Z}$ and the missing values estimate $\mathbf{x}^{(m)}$, along with the posterior responsibilities $R_{ij}$. Then in the M-step, we use the updated latent variables to update the model parameters.
+
+% \paragraph{E-step} First of all, use the full data $x$ - made of observed and estimated missing data - to evaluate $R_{ij}$ using \cref{eq:mppca_EM_responsibility}. Then, estimate the mean and covariance of the latent variable $\mathbf{z}^j|\mathbf{x}$:
+
+% \begin{align}
+%     \label{eq:mppca_EM_e_step_E}
+%     \E[\mathbf{z}^j|\mathbf{x}] &= \mathbf{M}_j^{-1}\mathbf{W}_j^{T}\left(x - \boldsymbol{\mu}_j\right) \\
+%     \label{eq:mppca_EM_e_step_Cov}
+%     \mathbf{Cov}[\mathbf{z}^j|\mathbf{x}] &= \sigma_j^2\mathbf{M}_j^{-1} + \E[\mathbf{z}^j|\mathbf{x}]\E[\mathbf{z}^j|\mathbf{x}]^T
+% \end{align}
+    
+%     where $\mathbf{M}_j = \mathbf{W}_j^{T}\mathbf{W}_j + \sigma_j^2\mathbf{I}$. The expectation of the latent variable given the observed data can then be used to estimate the missing data:
+
+% \begin{equation}
+%     \label{eq:mppca_EM_e_step_completion}
+%     \E[\mathbf{x}^{(m)}|\mathbf{x}^{(o)}] = \mathbf{W}^{(m)}\E[\mathbf{z}^j|\mathbf{x}] + \boldsymbol{\mu}^{(m)}
+% \end{equation}
+
+% \paragraph{M-step} Use the updates from the E-step to do the following updates:
+
+% \begin{align}
+%     \label{eq:mppca_EM_m_step_pi}
+%     \widetilde{\pi}_j &= \frac{1}{n}\sum_{i=1}^n R_{ij} \\
+%     \label{eq:mppca_EM_m_step_mu}
+%     \widetilde{\boldsymbol{\mu}}_j &= \frac{\sum_{i=1}^n R_{ij}\left(x_i - \widetilde{\boldsymbol{\mu}}_j\E[\mathbf{z}^j|\mathbf{x}]\right)}{\sum_{i=1}^n R_{ij}} \\
+%     \label{eq:mppca_EM_m_step_W}
+%     \widetilde{\mathbf{W}}_j &= \left[
+%         \sum_{i=1}^n R_{ij}\left(\mathbf{x}_i - \widetilde{\boldsymbol{\mu}}_j\right) \E[\mathbf{z}^j|\mathbf{x}_i]^T
+%     \right] \left[
+%         \sum_{i=1}^n R_{ij}\mathbf{Cov}[\mathbf{z}^j|\mathbf{x}_i]
+%     \right]^{-1} \\
+%     \label{eq:mppca_EM_m_step_sigma}
+%     \widetilde{\sigma}_j^2 &= \frac{1}{d\sum_{i=1}^n R_{ij}} \left\{ \sum_{i=1}^n R_{ij} \left[\left\| \mathbf{x}_i - \widetilde{\boldsymbol{\mu}}_j\right\|^2 - 2\E[\mathbf{z}^j|\mathbf{x}_i]^T\widetilde{\mathbf{W}}_j^T\left(\mathbf{x}_i - \widetilde{\boldsymbol{\mu}}_j\right) + \text{tr}\left(\mathbf{Cov}[\mathbf{z}^j|\mathbf{x}_i]\widetilde{\mathbf{W}}_j^T\widetilde{\mathbf{W}}_j\right)\right]
+%     \right\}
+% \end{align}
+
+% \noindent where the tilde denotes the updated values of the parameters. Note that \cref{eq:mppca_EM_m_step_mu} and \cref{eq:mppca_EM_m_step_W} are coupled
 
 \end{document}
