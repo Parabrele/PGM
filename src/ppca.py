@@ -189,7 +189,7 @@ def compute_Z(W, X, mu, sigma_squared, q, device=device):
     )
 
 
-def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device):
+def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device, return_likelihood=False):
     """Compute responsibilities for each component."""
     # Compute normal distribution parameters
     Z = compute_Z(W, X, mu, sigma_squared, W.shape[-1], device)
@@ -217,6 +217,10 @@ def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device):
     responsibilities = (log_resp - log_resp_max).exp()
     responsibilities /= responsibilities.sum(dim=0, keepdim=True)
 
+    if return_likelihood:
+        resp = (log_resp - log_resp_max).exp()
+        likelihood = resp.sum(dim=0) # sum over k : shape (n)
+        return responsibilities, likelihood
     return responsibilities
 
 
