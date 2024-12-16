@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 device = "cuda" if th.cuda.is_available() else "cpu"
 
 
-def ppca_closed_form(X, q, R=None):
+def ppca_closed_form(X, q, R=None, return_sigma=False):
     """
     Perform Probabilistic Principal Component Analysis on the dataset X.
     """
@@ -28,6 +28,9 @@ def ppca_closed_form(X, q, R=None):
     W_ML = Uq @ th.sqrt(lambda_q - sigma_ml * id_q)
     if R is not None:
         W_ML = W_ML @ R
+    
+    if return_sigma:
+        return W_ML, sigma_ml
     return W_ML
 
 
@@ -237,7 +240,9 @@ def update_parameters(X, responsibilities, d, q, device):
     ) / (new_pi.unsqueeze(-1).unsqueeze(-1) * n)
 
     # Compute new W and sigma_ml
-    eigenvectors, eigenvalues, _ = th.svd(new_sigmas)
+    eigenvectors, eigenvalues, _ = th.svd(new_sigmas.to('cpu'))
+    eigenvalues = eigenvalues.to(device)
+    eigenvectors = eigenvectors.to(device)
     sigma_ml = eigenvalues[:, q:].sum(dim=1) / (d - q)
     Uq = eigenvectors[:, :, :q]
     lambda_q = th.diag_embed(eigenvalues[:, :q])
