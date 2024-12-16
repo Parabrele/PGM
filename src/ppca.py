@@ -6,7 +6,8 @@ from sklearn.cluster import KMeans
 device = "cuda" if th.cuda.is_available() else "cpu"
 
 
-def ppca_closed_form(X, q, R=None):
+@th.no_grad()
+def ppca_closed_form(X, q, R=None, device=device):
     """
     Perform Probabilistic Principal Component Analysis on the dataset X.
     """
@@ -17,7 +18,9 @@ def ppca_closed_form(X, q, R=None):
     mu = X.mean(dim=0)
     X_centered = X - mu
     sigma = X_centered.T.cov()
-    eigenvectors, eigenvalues, _ = th.svd(sigma)
+    eigenvectors, eigenvalues, _ = th.svd(sigma.cpu())
+    eigenvectors = eigenvectors.to(device)
+    eigenvalues = eigenvalues.to(device)
     if q != d:
         sigma_ml = eigenvalues[q + 1 :].sum() / (d - q)
     else:
@@ -28,9 +31,10 @@ def ppca_closed_form(X, q, R=None):
     W_ML = Uq @ th.sqrt(lambda_q - sigma_ml * id_q)
     if R is not None:
         W_ML = W_ML @ R
-    return W_ML
+    return W_ML, sigma_ml, mu
 
 
+@th.no_grad()
 def mppca_full(X, q, k, epsilon=1e-4, max_iter=100, use_kmeans_init=True):
     """
     Perform Mixtures of Probabilistic Principal Component Analyzers on the dataset X.
@@ -91,7 +95,7 @@ def mppca_full(X, q, k, epsilon=1e-4, max_iter=100, use_kmeans_init=True):
         pi = th.ones(k, device=device) / k  # Uniform mixture weights
         W = th.randn(k, d, q, device=device) * 0.01  # Random initialization of W
         sigma_squared = th.ones(k, device=device)  # Initialize all sigmas to 1
-
+    sigma_squared += 1e-6
     # Main EM loop
     for i in trange(max_iter):
         M = W.transpose(1, 2) @ W + sigma_squared.unsqueeze(-1).unsqueeze(-1) * th.eye(
@@ -118,7 +122,7 @@ def mppca_full(X, q, k, epsilon=1e-4, max_iter=100, use_kmeans_init=True):
         # Calculate log responsibilities
         log_resp = (
             th.log(pi).unsqueeze(1)  # [k, 1]
-            - 0.5 * d * th.log(2 * np.pi * sigma_squared).unsqueeze(1)  # [k, 1]
+            - 0.5 * d * th.log(2 * np.pi * sigma_squared).unsqueeze(1)
             - 0.5
             * th.einsum(
                 "knD,knD->kn",
@@ -151,11 +155,13 @@ def mppca_full(X, q, k, epsilon=1e-4, max_iter=100, use_kmeans_init=True):
             )
         ) / (new_pi.unsqueeze(-1).unsqueeze(-1) * n)
         assert new_sigmas.shape == (k, d, d), f"new_sigmas shape: {new_sigmas.shape}"
-        eigenvectors, eigenvalues, _ = th.svd(new_sigmas)
+        eigenvectors, eigenvalues, _ = th.svd(new_sigmas.to("cpu"))
+        eigenvalues = eigenvalues.to(device)
+        eigenvectors = eigenvectors.to(device)
         sigma_ml = eigenvalues[:, q:].sum(dim=1) / (d - q)
         print(f"sigma_ml: {sigma_ml}")
         Uq = eigenvectors[:, :, :q]
-        lambda_q = th.diag_embed(eigenvalues[:, :q])
+        lambda_q = th.diag_embed(eigenvalues[:, :q] + 1e-6)
         id_q = th.eye(q).unsqueeze(0).to(device)
         new_W = Uq @ th.sqrt(lambda_q - sigma_ml.unsqueeze(-1).unsqueeze(-1) * id_q)
         assert new_W.shape == (k, d, q), f"new_W shape: {new_W.shape}"
@@ -170,29 +176,60 @@ def mppca_full(X, q, k, epsilon=1e-4, max_iter=100, use_kmeans_init=True):
         W = new_W
         pi = new_pi
         mu = new_mu
-        sigma_squared = sigma_ml
+        sigma_squared = sigma_ml + 1e-6
     print(f"Finished in {i} iterations with update size {update_size}")
-    return W, mu, sigma_squared
+    return W, mu, sigma_squared, pi
 
 
+@th.no_grad()
 def compute_Z(W, X, mu, sigma_squared, q, device=device):
     """Compute latent variables Z."""
     M = W.transpose(1, 2) @ W + sigma_squared.unsqueeze(-1).unsqueeze(-1) * th.eye(
         q
     ).to(device).unsqueeze(0)
-    M_inv = M.inverse()
-    return th.einsum(
+    if M.isnan().any():
+        print("nan in M")
+    try:
+        M_inv = M.inverse()
+    except LinAlgError:
+        print("Singular matrix, using pseudoinverse")
+        M_inv = th.pinverse(M)
+    if M_inv.isnan().any():
+        print("nan in M_inv")
+    Z = th.einsum(
         "kqd, knd -> knq", M_inv @ W.transpose(1, 2), (X.unsqueeze(0) - mu.unsqueeze(1))
     )
+    if Z.isnan().any():
+        print("nan in Z")
+    return Z
 
 
-def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device):
+@th.no_grad()
+def compute_responsibilities(
+    X,
+    W,
+    mu,
+    sigma_squared,
+    pi,
+    d=None,
+    device=device,
+):
     """Compute responsibilities for each component."""
     # Compute normal distribution parameters
+    if d is None:
+        d = X.shape[-1]
     Z = compute_Z(W, X, mu, sigma_squared, W.shape[-1], device)
     mu_normals = th.einsum("kdq, knq -> knd", W, Z) + mu.unsqueeze(1)
-    sigma_normals = sigma_squared.unsqueeze(-1).unsqueeze(-1) * th.eye(d).to(device)
-
+    if mu_normals.isnan().any():
+        print("nan in mu_normals")
+    sigma_normals = (sigma_squared.unsqueeze(-1).unsqueeze(-1)) * th.eye(d).to(device)
+    if sigma_normals.isnan().any():
+        print("nan in sigma_normals")
+    if sigma_normals.isinf().any():
+        print("inf in sigma_normals")
+        print(
+            f"num inf / num non inf: {sigma_normals.isinf().sum()} / {(~sigma_normals.isinf()).sum()}"
+        )
     # Calculate log responsibilities
     log_resp = (
         th.log(pi).unsqueeze(1)
@@ -208,15 +245,57 @@ def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device):
             (X.unsqueeze(0) - mu_normals),
         )
     )
-
+    if log_resp.isnan().any():
+        print("nan in log_resp")
+    if log_resp.isinf().any():
+        print(f"sigma_squared: {sigma_squared}")
+        print("inf in log_resp")
+        print(
+            f"num inf / num non inf: {log_resp.isinf().sum()} / {(~log_resp.isinf()).sum()}"
+        )
     # Numerical stability: subtract max and exp
     log_resp_max = log_resp.max(dim=0, keepdim=True)[0]
     responsibilities = (log_resp - log_resp_max).exp()
+    if (log_resp - log_resp_max).isnan().any():
+        print("nan in (log_resp - log_resp_max)")
+    if responsibilities.isnan().any():
+        print("nan in responsibilities")
     responsibilities /= responsibilities.sum(dim=0, keepdim=True)
-
+    if responsibilities.isnan().any():
+        print("nan in responsibilities")
     return responsibilities
 
 
+@th.no_grad()
+def compute_probabilities(X, W, mu, sigma_squared, pi, d=None, device=device):
+    if d is None:
+        d = X.shape[-1]
+    Z = compute_Z(W, X, mu, sigma_squared, W.shape[-1], device)
+    mu_normals = th.einsum("kdq, knq -> knd", W, Z) + mu.unsqueeze(1)
+    sigma_normals = (sigma_squared.unsqueeze(-1).unsqueeze(-1) + 1e-6) * th.eye(d).to(
+        device
+    )
+    probs = (
+        (
+            -0.5
+            * th.einsum(
+                "knD,knD->kn",
+                th.einsum(
+                    "knd,kdD->knD",
+                    (X.unsqueeze(0) - mu_normals),
+                    sigma_normals.inverse(),
+                ),
+                (X.unsqueeze(0) - mu_normals),
+            )
+        ).exp()
+        / ((2 * np.pi * sigma_squared.unsqueeze(-1)) ** (d / 2))
+        * pi.unsqueeze(1)
+    )
+
+    return probs.sum(dim=0)
+
+
+@th.no_grad()
 def update_parameters(X, responsibilities, d, q, device):
     """Update model parameters based on responsibilities."""
     n = X.shape[0]
@@ -237,16 +316,32 @@ def update_parameters(X, responsibilities, d, q, device):
     ) / (new_pi.unsqueeze(-1).unsqueeze(-1) * n)
 
     # Compute new W and sigma_ml
-    eigenvectors, eigenvalues, _ = th.svd(new_sigmas)
+    eigenvectors, eigenvalues, _ = th.svd(new_sigmas.to("cpu"))
+    eigenvalues = eigenvalues.to(device)
+    eigenvectors = eigenvectors.to(device)
+    # eigenvectors, eigenvalues, _ = th.svd(new_sigmas)
     sigma_ml = eigenvalues[:, q:].sum(dim=1) / (d - q)
+    sigma_ml += 1e-6
     Uq = eigenvectors[:, :, :q]
-    lambda_q = th.diag_embed(eigenvalues[:, :q])
+    lambda_q = th.diag_embed(eigenvalues[:, :q] + 1e-6)
     id_q = th.eye(q).unsqueeze(0).to(device)
+    if sigma_ml.isnan().any():
+        print("nan in sigma_ml")
+    if lambda_q.isnan().any():
+        print("nan in lambda_q")
     new_W = Uq @ th.sqrt(lambda_q - sigma_ml.unsqueeze(-1).unsqueeze(-1) * id_q)
-
+    if new_W.isnan().any():
+        print("nan in new_W")
+    if new_mu.isnan().any():
+        print("nan in new_mu")
+    if new_pi.isnan().any():
+        print("nan in new_pi")
+    if sigma_ml.isnan().any():
+        print("nan in sigma_ml")
     return new_W, new_mu, new_pi, sigma_ml
 
 
+@th.no_grad()
 def initialize_with_kmeans(X, k, q, d):
     """Initialize parameters using K-means clustering."""
     n = X.shape[0]
@@ -281,10 +376,10 @@ def initialize_with_kmeans(X, k, q, d):
             # Fallback for empty clusters
             W[i] = th.randn(d, q, device=device) * 0.01
             sigma_squared[i] = 1.0
+    return W, mu, pi, sigma_squared + 1e-6
 
-    return W, mu, pi, sigma_squared
 
-
+@th.no_grad()
 def initialize_randomly(X, k, q, d):
     """Initialize parameters randomly."""
     n = X.shape[0]
@@ -297,6 +392,7 @@ def initialize_randomly(X, k, q, d):
     return W, mu, pi, sigma_squared
 
 
+@th.no_grad()
 def mppca(X, q, k, epsilon=1e-4, max_iter=100, use_kmeans_init=True):
     """
     Perform Mixtures of Probabilistic Principal Component Analyzers on the dataset X.
@@ -334,7 +430,7 @@ def mppca(X, q, k, epsilon=1e-4, max_iter=100, use_kmeans_init=True):
         )
 
         if update_size < epsilon:
-            
+
             break
 
         W, pi, mu, sigma_squared = new_W, new_pi, new_mu, sigma_ml
