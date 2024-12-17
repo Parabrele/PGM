@@ -267,31 +267,59 @@ def compute_responsibilities(
 
 
 @th.no_grad()
-def compute_probabilities(X, W, mu, sigma_squared, pi, d=None, device=device):
+def compute_probabilities(
+    X, W, mu, sigma_squared, pi, d=None, device=device, normalize=True
+):
     if d is None:
         d = X.shape[-1]
     Z = compute_Z(W, X, mu, sigma_squared, W.shape[-1], device)
     mu_normals = th.einsum("kdq, knq -> knd", W, Z) + mu.unsqueeze(1)
+    if mu_normals.isnan().any():
+        print("nan in mu_normals")
+    if mu_normals.isinf().any():
+        print("inf in mu_normals")
     sigma_normals = (sigma_squared.unsqueeze(-1).unsqueeze(-1) + 1e-6) * th.eye(d).to(
         device
     )
-    probs = (
-        (
-            -0.5
-            * th.einsum(
-                "knD,knD->kn",
-                th.einsum(
-                    "knd,kdD->knD",
-                    (X.unsqueeze(0) - mu_normals),
-                    sigma_normals.inverse(),
-                ),
+    if sigma_normals.isnan().any():
+        print("nan in sigma_normals")
+    if sigma_normals.isinf().any():
+        print("inf in sigma_normals")
+    exp_term = (
+        -0.5
+        * th.einsum(
+            "knD,knD->kn",
+            th.einsum(
+                "knd,kdD->knD",
                 (X.unsqueeze(0) - mu_normals),
-            )
-        ).exp()
-        / ((2 * np.pi * sigma_squared.unsqueeze(-1)) ** (d / 2))
-        * pi.unsqueeze(1)
-    )
+                sigma_normals.inverse(),
+            ),
+            (X.unsqueeze(0) - mu_normals),
+        )
+    ).exp() * pi.unsqueeze(1)
+    if exp_term.isnan().any():
+        print("nan in exp_term")
+    if exp_term.isinf().any():
+        print("inf in exp_term")
+    norm_term = (2 * np.pi * sigma_squared.unsqueeze(-1)) ** (d / 2)
 
+    if normalize:
+        if norm_term.isnan().any():
+            print("nan in norm_term")
+        if norm_term.isinf().any():
+            print("inf in norm_term")
+        if (norm_term == 0).any():
+            print("zero in norm_term")
+            print(
+                f"num zero / num non zero: {(norm_term == 0).sum()} / {(norm_term != 0).sum()}"
+            )
+        probs = exp_term / norm_term
+    else:
+        probs = exp_term
+    if probs.isnan().any():
+        print("nan in probs")
+    if probs.isinf().any():
+        print("inf in probs")
     return probs.sum(dim=0)
 
 
