@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 device = "cuda" if th.cuda.is_available() else "cpu"
 
 
-def ppca_closed_form(X, q, R=None):
+def ppca_closed_form(X, q, R=None, return_sigma=False):
     """
     Perform Probabilistic Principal Component Analysis on the dataset X.
     """
@@ -28,6 +28,8 @@ def ppca_closed_form(X, q, R=None):
     W_ML = Uq @ th.sqrt(lambda_q - sigma_ml * id_q)
     if R is not None:
         W_ML = W_ML @ R
+    if return_sigma:
+        return W_ML, sigma_ml
     return W_ML
 
 
@@ -185,8 +187,17 @@ def compute_Z(W, X, mu, sigma_squared, q, device=device):
         "kqd, knd -> knq", M_inv @ W.transpose(1, 2), (X.unsqueeze(0) - mu.unsqueeze(1))
     )
 
+def compute_likelihood(X, W, mu, sigma_squared, pi, d, device):
+    Sigma = th.einsum("kdq, kDq -> kdD", W, W) + sigma_squared.unsqueeze(-1).unsqueeze(-1) * th.eye(d).to(device)
+    log_likelihood = th.log(pi).unsqueeze(1) - 0.5 * d * th.log(2 * np.pi * sigma_squared).unsqueeze(1) - 0.5 * th.einsum(
+        "knD, kDd, knD -> kn",
+        X.unsqueeze(0) - mu.unsqueeze(1),
+        Sigma.inverse(),
+        X.unsqueeze(0) - mu.unsqueeze(1)
+    )
+    return log_likelihood.sum(dim=0) # shape (n,)
 
-def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device, return_likelihood=False):
+def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device):
     """Compute responsibilities for each component."""
     # Compute normal distribution parameters
     Z = compute_Z(W, X, mu, sigma_squared, W.shape[-1], device)
@@ -214,10 +225,6 @@ def compute_responsibilities(X, W, mu, sigma_squared, pi, d, device, return_like
     responsibilities = (log_resp - log_resp_max).exp()
     responsibilities /= responsibilities.sum(dim=0, keepdim=True)
 
-    if return_likelihood:
-        resp = (log_resp - log_resp_max).exp()
-        likelihood = resp.sum(dim=0) # sum over k : shape (n)
-        return responsibilities, likelihood
     return responsibilities
 
 
